@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>萬能圖片轉檔 & 影片轉 GIF 剪輯室</title>
+  <link rel="stylesheet" href="./style.css" />
+  <!-- Client-side libraries (100% browser-based, GitHub Pages ready) -->
+  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.min.js" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/utif@3.1.0/UTIF.min.js" defer></script>
+  <script src="./vendor/ffmpeg.js" defer></script>
+  <script src="./engine.js" defer></script>
+  <script src="./app.js" defer></script>
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-icon">✦</div>
+        <div>
+          <h1>萬能媒體轉檔工作室</h1>
+          <p class="subtitle">100% 瀏覽器本機運算・不上傳任何檔案・全格式圖片互轉 &amp; 影片片段轉 GIF</p>
+        </div>
+      </div>
+      <nav class="tabs" role="tablist">
+        <button class="tab-btn active" data-tab="image" role="tab" aria-selected="true">
+          <span class="tab-icon">🖼️</span> 圖片萬能轉檔
+        </button>
+        <button class="tab-btn" data-tab="video" role="tab" aria-selected="false">
+          <span class="tab-icon">🎬</span> 影片轉 GIF 剪輯室
+        </button>
+      </nav>
+    </header>
+
+    <!-- ================= TAB 1: IMAGE CONVERTER ================= -->
+    <main id="tab-image" class="tab-panel active">
+      <section class="card upload-card">
+        <div id="image-dropzone" class="dropzone">
+          <input type="file" id="image-file-input" multiple accept="image/*,.heic,.heif,.avif,.webp,.tiff,.tif,.bmp,.ico,.svg,.psd,.tga,.dds,.exr,.hdr,.ppm,.pgm,.pbm,.qoi,.pcx,.sgi,video/*" hidden />
+          <div class="dropzone-icon">📂</div>
+          <h2>拖曳圖片到這裡，或點擊選擇檔案</h2>
+          <p class="hint">
+            支援輸入：PNG, JPG, WEBP, AVIF, GIF, HEIC/HEIF, TIFF, BMP, ICO, SVG, PSD, TGA, DDS, EXR, PPM 等幾乎所有格式（支援批次上傳）
+          </p>
+          <p class="hint subtle">💡 所有檔案皆在您的瀏覽器內離線轉檔；若拖入影片檔，將自動切換到「影片轉 GIF 剪輯室」</p>
+        </div>
+      </section>
+
+      <section class="card settings-card">
+        <div class="section-header">
+          <h3>輸出格式與轉檔設定</h3>
+          <span class="badge" id="queue-count-badge">待轉換 0 個檔案</span>
+        </div>
+
+        <div class="format-picker" id="image-format-picker">
+          <button class="fmt-pill active" data-format="png">PNG</button>
+          <button class="fmt-pill" data-format="jpg">JPG</button>
+          <button class="fmt-pill" data-format="webp">WEBP</button>
+          <button class="fmt-pill" data-format="avif">AVIF</button>
+          <button class="fmt-pill" data-format="gif">GIF</button>
+          <button class="fmt-pill" data-format="ico">ICO <small>多尺寸</small></button>
+          <button class="fmt-pill" data-format="bmp">BMP</button>
+          <button class="fmt-pill" data-format="tiff">TIFF</button>
+          <button class="fmt-pill" data-format="pdf">PDF</button>
+          <button class="fmt-pill" data-format="tga">TGA</button>
+          <button class="fmt-pill" data-format="ppm">PPM</button>
+        </div>
+
+        <div class="options-grid">
+          <div class="option-item">
+            <label for="img-quality">畫質品質：<strong id="img-quality-val">88</strong>%</label>
+            <input type="range" id="img-quality" min="10" max="100" value="88" />
+          </div>
+
+          <div class="option-item">
+            <label>調整尺寸（留空維持原尺寸）</label>
+            <div class="inline-inputs">
+              <input type="number" id="img-width" placeholder="寬度 px" min="1" max="16000" />
+              <span>×</span>
+              <input type="number" id="img-height" placeholder="高度 px" min="1" max="16000" />
+            </div>
+          </div>
+
+          <div class="option-item">
+            <label for="img-fit">縮放模式</label>
+            <select id="img-fit">
+              <option value="inside">等比縮放（不裁切）</option>
+              <option value="cover">填滿裁切</option>
+              <option value="fill">強制拉伸</option>
+            </select>
+          </div>
+
+          <div class="option-item">
+            <label for="img-bgcolor">透明背景填色（JPG/BMP）</label>
+            <div class="color-row">
+              <input type="color" id="img-bgcolor" value="#ffffff" />
+              <span id="img-bgcolor-hex">#ffffff</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="actions-bar">
+          <button id="btn-convert-all" class="btn btn-primary" disabled>
+            🚀 開始批次轉檔
+          </button>
+          <button id="btn-download-zip" class="btn btn-success" disabled>
+            📦 全部打包下載 (.ZIP)
+          </button>
+          <button id="btn-clear-queue" class="btn btn-ghost" disabled>
+            🗑️ 清空列表
+          </button>
+        </div>
+      </section>
+
+      <section class="card queue-card" id="image-queue-section" hidden>
+        <div class="section-header">
+          <h3>檔案列表</h3>
+        </div>
+        <div id="image-queue-list" class="queue-list"></div>
+      </section>
+    </main>
+
+    <!-- ================= TAB 2: VIDEO TO GIF STUDIO ================= -->
+    <main id="tab-video" class="tab-panel">
+      <section class="card upload-card" id="video-upload-section">
+        <div id="video-dropzone" class="dropzone">
+          <input type="file" id="video-file-input" accept="video/*,.mkv,.avi,.mov,.flv,.wmv,.m4v,.3gp,.ts,.webm,.gif" hidden />
+          <div class="dropzone-icon">🎞️</div>
+          <h2>拖曳影片到這裡，開始剪輯 GIF 片段</h2>
+          <p class="hint">
+            支援 MP4, MOV, MKV, AVI, WEBM, FLV, WMV, M4V, 3GP, TS, GIF 等幾乎所有影片格式
+          </p>
+          <p class="hint subtle">✨ 內建視覺化時間軸縮圖、精準起訖點拉桿、2-Pass 高畫質調色盤（純瀏覽器 FFmpeg.wasm 運作）</p>
+        </div>
+        <div id="video-upload-progress" class="upload-progress" hidden>
+          <div class="spinner"></div>
+          <span id="video-upload-status">正在解析影片...</span>
+        </div>
+      </section>
+
+      <section id="video-editor-workspace" class="editor-workspace" hidden>
+        <div class="editor-top-bar card">
+          <div class="video-file-info">
+            <strong id="video-filename">video.mp4</strong>
+            <span class="meta-pill" id="video-meta-res">1920×1080</span>
+            <span class="meta-pill" id="video-meta-dur">00:00.0</span>
+            <span class="meta-pill" id="video-meta-size">0 MB</span>
+          </div>
+          <button id="btn-change-video" class="btn btn-ghost btn-sm">更換影片</button>
+        </div>
+
+        <div class="editor-grid">
+          <!-- Left: Player & Timeline -->
+          <div class="card player-card">
+            <div class="video-stage">
+              <video id="video-player" playsinline preload="auto"></video>
+            </div>
+
+            <div class="player-controls">
+              <button id="btn-play-pause" class="btn btn-secondary btn-sm">▶ 播放</button>
+              <button id="btn-play-clip" class="btn btn-primary btn-sm">🔁 只播選取片段</button>
+              <label class="checkbox-label compact">
+                <input type="checkbox" id="chk-loop-clip" checked />
+                自動循環片段
+              </label>
+              <div class="time-readout">
+                目前：<span id="current-time-display">00:00.0</span>
+              </div>
+            </div>
+
+            <!-- Interactive Filmstrip Timeline -->
+            <div class="timeline-wrapper">
+              <div class="timeline-header">
+                <span>🎯 拖曳左右拉桿或中間區塊，精準選擇想要的片段</span>
+                <span class="clip-duration-badge">選取長度：<strong id="clip-duration-display">0.0s</strong></span>
+              </div>
+
+              <div id="timeline-track" class="timeline-track">
+                <div id="timeline-filmstrip" class="timeline-filmstrip">
+                  <div class="filmstrip-loading">正在擷取時間軸縮圖...</div>
+                </div>
+                <div id="timeline-mask-left" class="timeline-mask left"></div>
+                <div id="timeline-mask-right" class="timeline-mask right"></div>
+                <div id="timeline-selection" class="timeline-selection">
+                  <div id="handle-start" class="timeline-handle left" title="拖曳調整起點"></div>
+                  <div id="handle-end" class="timeline-handle right" title="拖曳調整終點"></div>
+                </div>
+                <div id="timeline-playhead" class="timeline-playhead"></div>
+              </div>
+
+              <div class="clip-precise-controls">
+                <div class="time-input-group">
+                  <label for="input-start-time">開始時間 (秒)</label>
+                  <div class="time-input-row">
+                    <input type="number" id="input-start-time" step="0.1" min="0" value="0" />
+                    <button id="btn-set-start" class="btn btn-ghost btn-xs" title="以目前播放位置設為起點">設為目前畫面</button>
+                  </div>
+                </div>
+
+                <div class="time-input-group">
+                  <label for="input-end-time">結束時間 (秒)</label>
+                  <div class="time-input-row">
+                    <input type="number" id="input-end-time" step="0.1" min="0.1" value="5" />
+                    <button id="btn-set-end" class="btn btn-ghost btn-xs" title="以目前播放位置設為終點">設為目前畫面</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Right: Export Settings & Result -->
+          <div class="card export-card">
+            <h3>動態圖輸出設定</h3>
+
+            <div class="export-form">
+              <div class="form-group">
+                <label>輸出格式</label>
+                <div class="format-picker compact" id="video-format-picker">
+                  <button class="fmt-pill active" data-vformat="gif">GIF</button>
+                  <button class="fmt-pill" data-vformat="webp">動態 WebP</button>
+                  <button class="fmt-pill" data-vformat="apng">APNG</button>
+                </div>
+              </div>
+
+              <div class="form-group">
+                <label for="gif-fps">幀率 (FPS)：<strong id="gif-fps-val">15</strong> fps</label>
+                <input type="range" id="gif-fps" min="5" max="30" value="15" />
+              </div>
+
+              <div class="form-group">
+                <label for="gif-width">輸出寬度（高度自動等比）</label>
+                <select id="gif-width">
+                  <option value="320">320 px（輕量聊天貼圖）</option>
+                  <option value="480" selected>480 px（推薦平衡）</option>
+                  <option value="640">640 px（高清）</option>
+                  <option value="720">720 px（HD）</option>
+                  <option value="960">960 px（超清）</option>
+                  <option value="0">維持原始解析度</option>
+                </select>
+              </div>
+
+              <div class="form-group">
+                <label for="gif-speed">播放速度</label>
+                <select id="gif-speed">
+                  <option value="0.5">0.5x（慢動作）</option>
+                  <option value="0.75">0.75x</option>
+                  <option value="1" selected>1.0x（原速）</option>
+                  <option value="1.25">1.25x</option>
+                  <option value="1.5">1.5x（快轉）</option>
+                  <option value="2">2.0x（兩倍速）</option>
+                  <option value="3">3.0x（三倍速）</option>
+                </select>
+              </div>
+
+              <div class="form-group gif-only-group">
+                <label for="gif-colors">調色盤顏色數（越高越細緻）</label>
+                <select id="gif-colors">
+                  <option value="256" selected>256 色（最高畫質）</option>
+                  <option value="128">128 色（檔案較小）</option>
+                  <option value="64">64 色（極致壓縮）</option>
+                </select>
+              </div>
+
+              <div class="form-group gif-only-group">
+                <label for="gif-dither">抖動演算法 (Dithering)</label>
+                <select id="gif-dither">
+                  <option value="sierra2_4a" selected>Sierra2 4A（推薦自然平滑）</option>
+                  <option value="floyd_steinberg">Floyd-Steinberg（細節銳利）</option>
+                  <option value="bayer">Bayer（復古網點・檔案較小）</option>
+                  <option value="none">關閉（卡通/純色最適合）</option>
+                </select>
+              </div>
+
+              <div class="form-group">
+                <label for="gif-effect">播放效果</label>
+                <select id="gif-effect">
+                  <option value="normal" selected>正常循環</option>
+                  <option value="reverse">倒放 (Reverse)</option>
+                  <option value="boomerang">來回循環 (Boomerang)</option>
+                </select>
+              </div>
+
+              <button id="btn-export-gif" class="btn btn-primary btn-full">
+                ✨ 產生選取片段動態圖
+              </button>
+            </div>
+
+            <div id="gif-export-loading" class="export-loading" hidden>
+              <div class="loading-row">
+                <div class="spinner"></div>
+                <span id="gif-export-status">正在初始化引擎...</span>
+              </div>
+              <div class="progress-bar-wrap">
+                <div id="gif-progress-bar" class="progress-bar-fill" style="width: 0%"></div>
+              </div>
+            </div>
+
+            <div id="gif-result-box" class="gif-result-box" hidden>
+              <div class="result-header">
+                <strong>✅ 轉換完成！</strong>
+                <span id="gif-result-size" class="meta-pill">0 KB</span>
+              </div>
+              <div class="result-preview-wrap">
+                <img id="gif-result-preview" alt="GIF 預覽" />
+              </div>
+              <a id="gif-result-download" class="btn btn-success btn-full" download>
+                ⬇️ 下載檔案
+              </a>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <div id="toast-container" class="toast-container"></div>
+  </div>
+</body>
+</html>
