@@ -620,8 +620,132 @@ async function convertVideoSegmentClient(file, options = {}, onStatus, onProgres
   }
 }
 
+/**
+ * Archive extraction (ZIP / CBZ via JSZip, RAR / CBR via node-unrar-js WASM)
+ */
+const ARCHIVE_EXT_RE = /\.(zip|cbz|rar|cbr)$/i;
+const IMAGE_EXT_RE = /\.(png|jpe?g|jfif|webp|avif|gif|heic|heif|tiff?|bmp|ico|svg|psd|tga|dds|exr|hdr|ppm|pgm|pbm|qoi|pcx|sgi)$/i;
+
+let unrarModulePromise = null;
+let unrarWasmBuffer = null;
+
+async function ensureUnrar() {
+  if (!unrarModulePromise) {
+    unrarModulePromise = import('https://esm.sh/node-unrar-js@2.0.2');
+  }
+  if (!unrarWasmBuffer) {
+    const resp = await fetch('https://cdn.jsdelivr.net/npm/node-unrar-js@2.0.2/esm/js/unrar.wasm');
+    if (!resp.ok) throw new Error('無法載入 RAR 解壓縮引擎');
+    unrarWasmBuffer = await resp.arrayBuffer();
+  }
+  const mod = await unrarModulePromise;
+  return { createExtractorFromData: mod.createExtractorFromData, wasmBinary: unrarWasmBuffer };
+}
+
+function guessImageMime(filename) {
+  const ext = getExt(filename);
+  const map = {
+    '.png': 'image/png',
+    '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.jfif': 'image/jpeg',
+    '.webp': 'image/webp',
+    '.avif': 'image/avif',
+    '.gif': 'image/gif',
+    '.bmp': 'image/bmp',
+    '.ico': 'image/x-icon',
+    '.svg': 'image/svg+xml',
+    '.tif': 'image/tiff',
+    '.tiff': 'image/tiff',
+    '.heic': 'image/heic',
+    '.heif': 'image/heif'
+  };
+  return map[ext] || 'application/octet-stream';
+}
+
+function isUsefulArchiveImagePath(entryPath) {
+  if (!entryPath) return false;
+  const normalized = entryPath.replace(/\\/g, '/');
+  if (normalized.endsWith('/')) return false;
+  if (normalized.includes('__MACOSX/')) return false;
+  const base = normalized.split('/').pop();
+  if (!base || base.startsWith('._') || base === '.DS_Store' || base === 'Thumbs.db') return false;
+  return IMAGE_EXT_RE.test(base);
+}
+
+/**
+ * Extract all image files from a .zip / .cbz / .rar / .cbr File
+ * Returns array of File objects (with relativePath property preserved for ZIP re-packing)
+ */
+async function extractImagesFromArchive(archiveFile, { onStatus, askPassword } = {}) {
+  const ext = getExt(archiveFile.name);
+  const extractedFiles = [];
+
+  if (ext === '.zip' || ext === '.cbz') {
+    if (!window.JSZip) throw new Error('ZIP 模組尚未載入');
+    if (onStatus) onStatus(`正在解壓縮 ${archiveFile.name}...`);
+    const zip = await window.JSZip.loadAsync(archiveFile);
+    const entries = Object.values(zip.files).filter((e) => !e.dir && isUsefulArchiveImagePath(e.name));
+
+    for (const entry of entries) {
+      const u8 = await entry.async('uint8array');
+      const normalized = entry.name.replace(/\\/g, '/');
+      const baseName = normalized.split('/').pop();
+      const f = new File([u8], baseName, { type: guessImageMime(baseName) });
+      f.archiveRelativePath = normalized;
+      extractedFiles.push(f);
+    }
+    return extractedFiles;
+  }
+
+  if (ext === '.rar' || ext === '.cbr') {
+    if (onStatus) onStatus(`正在載入 RAR 解壓縮引擎並解析 ${archiveFile.name}...`);
+    const { createExtractorFromData, wasmBinary } = await ensureUnrar();
+    const data = await archiveFile.arrayBuffer();
+
+    const runExtract = async (password = '') => {
+      const extractor = await createExtractorFromData({
+        wasmBinary,
+        data,
+        password
+      });
+      const result = extractor.extract();
+      const list = [];
+      for (const item of result.files) {
+        const header = item.fileHeader;
+        if (header.flags.directory) continue;
+        if (!isUsefulArchiveImagePath(header.name)) continue;
+        if (!item.extraction) continue;
+        const normalized = header.name.replace(/\\/g, '/');
+        const baseName = normalized.split('/').pop();
+        const f = new File([item.extraction], baseName, { type: guessImageMime(baseName) });
+        f.archiveRelativePath = normalized;
+        list.push(f);
+      }
+      return list;
+    };
+
+    try {
+      return await runExtract('');
+    } catch (err) {
+      const msg = String(err && err.message || err || '');
+      if (askPassword && /password|encrypt|ERAR_MISSING_PASSWORD|ERAR_BAD_PASSWORD/i.test(msg)) {
+        const pwd = askPassword(archiveFile.name);
+        if (pwd !== null) {
+          return await runExtract(pwd);
+        }
+      }
+      throw new Error(`RAR 解壓縮失敗：${msg || '可能已加密或格式損毀'}`);
+    }
+  }
+
+  throw new Error(`不支援的壓縮檔格式：${ext}`);
+}
+
 window.MediaEngine = {
+  ARCHIVE_EXT_RE,
   convertImageClient,
+  extractImagesFromArchive,
   transcodeVideoPreviewClient,
   extractThumbnailsFromVideoUrl,
   convertVideoSegmentClient
