@@ -100,7 +100,7 @@ function wireDropzone(zoneEl, inputEl, onFiles) {
   });
 }
 
-wireDropzone(imageDropzone, imageFileInput, (files) => {
+wireDropzone(imageDropzone, imageFileInput, async (files) => {
   if (files.length === 1 && (files[0].type.startsWith('video/') || VIDEO_EXT_RE.test(files[0].name))) {
     showToast('偵測到影片檔案，已自動切換至「影片轉 GIF 剪輯室」！', 'info');
     switchTab('video');
@@ -113,6 +113,41 @@ wireDropzone(imageDropzone, imageFileInput, (files) => {
       showToast(`「${file.name}」是影片檔，請在「影片轉 GIF 剪輯室」開啟`, 'info');
       continue;
     }
+
+    // Handle ZIP / RAR / CBZ / CBR archives automatically!
+    if (window.MediaEngine.ARCHIVE_EXT_RE.test(file.name)) {
+      showToast(`正在解壓縮「${file.name}」...`, 'info');
+      try {
+        const extracted = await window.MediaEngine.extractImagesFromArchive(file, {
+          askPassword: (name) => window.prompt(`「${name}」已加密，請輸入解壓縮密碼：`)
+        });
+        if (extracted.length === 0) {
+          showToast(`「${file.name}」內找不到可轉換的圖片檔案`, 'error');
+          continue;
+        }
+        for (const imgFile of extracted) {
+          const id = Math.random().toString(36).slice(2, 10);
+          const previewUrl = imgFile.type.startsWith('image/') ? URL.createObjectURL(imgFile) : null;
+          imageQueue.push({
+            id,
+            file: imgFile,
+            previewUrl,
+            status: 'pending',
+            statusText: '',
+            result: null,
+            downloadUrl: null,
+            error: null
+          });
+        }
+        renderImageQueue();
+        showToast(`已從「${file.name}」解壓縮並加入 ${extracted.length} 張圖片！`, 'success');
+      } catch (err) {
+        console.error(err);
+        showToast(err.message || `無法解壓縮「${file.name}」`, 'error');
+      }
+      continue;
+    }
+
     const id = Math.random().toString(36).slice(2, 10);
     const previewUrl = file.type.startsWith('image/') ? URL.createObjectURL(file) : null;
     imageQueue.push({
