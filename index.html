@@ -38,13 +38,13 @@
     <main id="tab-image" class="tab-panel active">
       <section class="card upload-card">
         <div id="image-dropzone" class="dropzone">
-          <input type="file" id="image-file-input" multiple accept="image/*,.heic,.heif,.avif,.webp,.tiff,.tif,.bmp,.ico,.svg,.psd,.tga,.dds,.exr,.hdr,.ppm,.pgm,.pbm,.qoi,.pcx,.sgi,video/*" hidden />
+          <input type="file" id="image-file-input" multiple accept="image/*,.heic,.heif,.avif,.webp,.tiff,.tif,.bmp,.ico,.svg,.psd,.tga,.dds,.exr,.hdr,.ppm,.pgm,.pbm,.qoi,.pcx,.sgi,.zip,.rar,.cbz,.cbr,video/*" hidden />
           <div class="dropzone-icon">📂</div>
-          <h2>拖曳圖片到這裡，或點擊選擇檔案</h2>
+          <h2>拖曳圖片或 ZIP / RAR 壓縮檔到這裡，或點擊選擇檔案</h2>
           <p class="hint">
-            支援輸入：PNG, JPG, WEBP, AVIF, GIF, HEIC/HEIF, TIFF, BMP, ICO, SVG, PSD, TGA, DDS, EXR, PPM 等幾乎所有格式（支援批次上傳）
+            支援輸入：PNG, JPG, WEBP, AVIF, GIF, HEIC/HEIF, TIFF, BMP, ICO, SVG, PSD, TGA, DDS, EXR, PPM，以及 <strong>ZIP / RAR / CBZ / CBR 壓縮檔自動解包轉檔</strong>
           </p>
-          <p class="hint subtle">💡 所有檔案皆在您的瀏覽器內離線轉檔；若拖入影片檔，將自動切換到「影片轉 GIF 剪輯室」</p>
+          <p class="hint subtle">💡 所有檔案皆在您的瀏覽器內離線轉檔；拖入 ZIP/RAR 會自動取出裡面所有圖片，拖入影片檔會自動切換到「影片轉 GIF 剪輯室」</p>
         </div>
       </section>
 
